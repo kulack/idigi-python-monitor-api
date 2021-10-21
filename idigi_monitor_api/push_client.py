@@ -17,7 +17,7 @@ iDigi.
 """
 import base64
 import errno
-import httplib
+import http.client
 import json
 import logging
 import os
@@ -28,9 +28,10 @@ import struct
 import time
 import urllib
 import zlib
+from urllib.parse import urlencode
 
 from xml.dom.minidom import getDOMImplementation
-from Queue import Queue, Empty
+from queue import Queue, Empty
 from threading import Thread
 
 LOG = logging.getLogger("idigi_monitor_api")
@@ -74,6 +75,8 @@ def push_client(username, password, **kwargs):
     :param ca_certs: Path to a file containing Certificates.  If not provided, 
         the idigi.crt file provided with the module will be used.  In most 
         cases, the idigi.crt file should be acceptable.
+        If the value is "nonprod", then the default idigi.crt file
+        will not be used but the "secure" flag is still honored.
     """
     return PushClient(username, password, **kwargs)
 
@@ -106,7 +109,7 @@ def _read_msg_header(session):
     response_type = struct.unpack('!H', session.data[0:2])[0]
 
     # Clear out session data as header is consumed.
-    session.data = ""
+    session.data = b''
     return response_type
 
 def _read_msg(session):
@@ -164,7 +167,7 @@ class PushSession(object):
         self.log         = logging.getLogger("push_session[%s]" % monitor_id)
 
         # Received protocol data holders.
-        self.data           = ""
+        self.data           = b''
         self.message_length = 0
         
     def send_connection_request(self):
@@ -183,11 +186,11 @@ class PushSession(object):
             # Username Length.
             payload += struct.pack('!H', len(self.client.username))
             # Username.
-            payload += self.client.username
+            payload += str(self.client.username).encode()
             # Password Length.
             payload += struct.pack('!H', len(self.client.password))
             # Password.
-            payload += self.client.password
+            payload += str(self.client.password).encode()
             # Monitor ID.
             payload += struct.pack('!L', int(self.monitor_id))
 
@@ -227,7 +230,7 @@ ConnectionResponse Type (%d)." % (response_type, CONNECTION_RESPONSE))
             if status_code != STATUS_OK:
                 raise PushException("Connection Response Status Code (%d) is \
 not STATUS_OK (%d)." % (status_code, STATUS_OK))
-        except Exception, exception:
+        except Exception as exception:
             # Likely a socket exception, close it and raise an exception.
             self.socket.close()
             self.socket = None
@@ -247,7 +250,7 @@ not STATUS_OK (%d)." % (status_code, STATUS_OK))
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.client.hostname, PUSH_OPEN_PORT))
             self.socket.setblocking(0)
-        except Exception, exception:
+        except Exception as exception:
             self.socket.close()
             self.socket = None
             raise exception
@@ -284,11 +287,19 @@ class SecurePushSession(PushSession):
         :param ca_certs: Path to a file containing Certificates.  
             If not provided, the idigi.crt file provided with the module will 
             be used.  In most cases, the idigi.crt file should be acceptable.
+            If the value is "nonprod", then the default idigi.crt file
+            will not be used but the "secure" flag is still honored.
         """
         PushSession.__init__(self, callback, monitor_id, client)
         # Fall back on idigi.crt in the same path as this module if not 
         # specified.
-        self.ca_certs = ca_certs if ca_certs is not None else IDIGI_CRT
+        defaultCerts = IDIGI_CRT
+        if ca_certs is not None:
+            if ca_certs == "nonprod":
+                defaultCerts = None
+            else:
+                defaultCerts = ca_certs
+        self.ca_certs = defaultCerts
     
     def start(self):
         """
@@ -313,7 +324,7 @@ class SecurePushSession(PushSession):
 
             self.socket.connect((self.client.hostname, PUSH_SECURE_PORT))
             self.socket.setblocking(0)
-        except Exception, exception:
+        except Exception as exception:
             self.socket.close()
             self.socket = None
             raise exception
@@ -344,7 +355,7 @@ class CallbackWorkerPool(object):
                                             block_id, 200)
                         self.__write_queue.put((session.socket, 
                             response_message))
-            except Exception, exception:
+            except Exception as exception:
                 self.log.exception(exception)
 
             self.__queue.task_done()
@@ -402,6 +413,8 @@ class PushClient(object):
         :param ca_certs: Path to a file containing Certificates.  
             If not provided, the idigi.crt file provided with the module will 
             be used.  In most cases, the idigi.crt file should be acceptable.
+            If the value is "nonprod", then the default idigi.crt file
+            will not be used but the "secure" flag is still honored.
         :param workers: Number of workers threads to process callback calls.
         """
         self.hostname     = hostname
@@ -409,7 +422,7 @@ class PushClient(object):
         self.password     = password
         self.secure       = secure
         self.ca_certs     = ca_certs
-        
+
         # A dict mapping Sockets to their PushSessions
         self.sessions          = {}
         # IO thread is used monitor sockets and consume data.
@@ -426,9 +439,7 @@ class PushClient(object):
         self.log               = logging.getLogger('push_client')
 
         self.headers           = {
-            'Authorization': 'Basic ' \
-            + base64.encodestring('%s:%s' %
-                (self.username,self.password))[:-1]
+            'Authorization': 'Basic ' + base64.b64encode(f'{self.username}:{self.password}'.encode()).decode()
         }
 
     def get_http_connection(self):
@@ -436,8 +447,8 @@ class PushClient(object):
         Returns a HTTPConnection or HTTPSConnection (depending on whether or 
         not secure is set) to be used for interfacing with iDigi web services.
         """
-        return httplib.HTTPSConnection(self.hostname) if self.secure \
-            else httplib.HTTPConnection(self.hostname)
+        return http.client.HTTPSConnection(self.hostname) if self.secure \
+            else http.client.HTTPConnection(self.hostname)
 
 
     def create_monitor(self, topics, batch_size=1, batch_duration=0, 
@@ -521,7 +532,7 @@ class PushClient(object):
         """
         # Query for Monitor conditionally by monTopic.
         params = {'condition' : "monTopic='%s'" % ','.join(topics)}
-        url = '/ws/Monitor/.json?' + urllib.urlencode([(key, params[key]) \
+        url = '/ws/Monitor/.json?' + urlencode([(key, params[key]) \
             for key in params])
         
         connection = self.get_http_connection()
@@ -574,7 +585,7 @@ class PushClient(object):
                 sock.send(data)
             except Empty:
                 pass # nothing to write after timeout
-            except socket.error, err:
+            except socket.error as err:
                 if err.errno == errno.EBADF:
                     self.__clean_dead_sessions()
 
@@ -635,11 +646,11 @@ class PushClient(object):
                             if not _read_msg(session):
                                 # Data not completely read, continue.
                                 continue
-                        except PushException, err:
+                        except PushException as err:
                             # If Socket is None, it was closed,
                             # otherwise it was closed when it shouldn't
                             # have been restart it.
-                            session.data = ""
+                            session.data = b''
                             session.message_length = 0
 
                             if session.socket is None:
@@ -652,7 +663,7 @@ class PushClient(object):
                         # We received full payload, 
                         # clear session data and parse it.
                         data = session.data
-                        session.data = ""
+                        session.data = b''
                         session.message_length = 0
                         block_id = struct.unpack('!H', data[0:2])[0]
                         compression = struct.unpack('!B', data[4:5])[0]
@@ -666,12 +677,12 @@ class PushClient(object):
                         # invoked.
                         self.__callback_pool.queue_callback(session, 
                             block_id, payload)
-                except select.error, err:
+                except select.error as err:
                     # Evaluate sessions if we get a bad file descriptor, if 
                     # socket is gone, delete the session.
                     if err.args[0] == errno.EBADF:
                         self.__clean_dead_sessions()
-                except Exception, err:
+                except Exception as err:
                     self.log.exception(err)
         finally:
             for session in self.sessions.values():

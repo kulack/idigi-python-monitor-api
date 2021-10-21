@@ -19,11 +19,10 @@ def trace_callback(data):
                    "." +
                    json_data['Document']['Msg']['DiaChannelDataFull']['id']['dcChannelName']))
         string_val = str(json_data['Document']['Msg']['DiaChannelDataFull']['dcdStringValue'])
-	sys.stdout.write("%s %s %s %s %s\n" % 
-                          (timestamp, operation, device_id, channel, string_val))
+        sys.stdout.write("%s %s %s %s %s\n" % (timestamp, operation, device_id, channel, string_val))
         return True
-    except Exception, e:
-        print repr(e)
+    except Exception as e:
+        print(e)
     return False
 
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', 

@@ -14,8 +14,8 @@ def trace_callback(data):
         file_data = base64.decodestring(json_data['Document']['Msg']['FileData']['fdData'])
         sys.stdout.write(file_data)
         return True
-    except Exception, e:
-        print e
+    except Exception as e:
+        print(e)
     return False
 
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', 

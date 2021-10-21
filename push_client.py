@@ -17,6 +17,8 @@ An example push_client method.  Call with '-h' for usage.
 Demonstrates simple xml and json callbacks for printing data as it is 
 received.
 """
+import getpass
+
 import argparse
 import json
 import logging
@@ -39,8 +41,8 @@ def json_cb(data):
         LOG.info("Data Received %s" % json.dumps(json_data, sort_keys=True, 
                     indent=4))
         return True
-    except Exception, exception:
-        print exception
+    except Exception as exception:
+        print(exception)
 
     return False
 
@@ -55,8 +57,8 @@ def xml_cb(data):
         dom = parseString(data)
         LOG.info("Data Received: %s" % (dom.toprettyxml()))
         return True
-    except Exception, exception:
-        print exception
+    except Exception as exception:
+        print(exception)
     
     return False
 
@@ -68,7 +70,7 @@ def get_parser():
     parser.add_argument('username', type=str,
         help='Username to authenticate with.')
 
-    parser.add_argument('password', type=str,
+    parser.add_argument('password', type=str, nargs='?', default=None,
         help='Password to authenticate with.')
 
     parser.add_argument('--topics', '-t', dest='topics', action='store', 
@@ -82,6 +84,11 @@ def get_parser():
     parser.add_argument('--insecure', dest='insecure', action='store_true',
         default=False,
         help='Prevent client from making secure (SSL) connection.')
+
+    parser.add_argument("--nonprod", dest="nonprod", action="store_true",
+                        default=False,
+                        help="Do not use public production certificates, "
+                             "but still use a secure connection")
 
     parser.add_argument('--compression', '-c',  dest='compression', 
         action='store', type=str, default='gzip', choices=['none', 'gzip'],
@@ -104,12 +111,18 @@ def get_parser():
 def main():
     """ Main function call """
     args = get_parser().parse_args()
+    if args.password is None:
+        args.password = getpass.getpass(f"Password for user {args.username} at {args.host}:")
+
     logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', 
                 datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
     LOG.info("Creating Push Client.")
 
+    ca_certs = None
+    if args.nonprod:
+        ca_certs="nonprod"
     client = push_client(args.username, args.password, hostname=args.host,
-                        secure=not args.insecure)
+                        secure=not args.insecure, ca_certs=ca_certs)
 
     topics = args.topics.split(',')
 
@@ -118,12 +131,12 @@ def main():
 
     # Delete Monitor if it Exists.
     if monitor_id is not None:
-        LOG.info("Monitor already exists, deleting it.")
-        client.delete_monitor(monitor_id)
-
-    monitor_id = client.create_monitor(topics, format_type=args.format,
-        compression=args.compression, batch_size=args.batchsize, 
-        batch_duration=args.batchduration)
+        LOG.info("Monitor already exists, using it.")
+        # client.delete_monitor(monitor_id)
+    else:
+        monitor_id = client.create_monitor(topics, format_type=args.format,
+            compression=args.compression, batch_size=args.batchsize,
+            batch_duration=args.batchduration)
 
     try:
         callback = json_cb if args.format == "json" else xml_cb
@@ -135,8 +148,8 @@ def main():
         LOG.warn("Closing Sessions and Cleaning Up.")
     finally:
         client.stop_all()
-        LOG.info("Deleting Monitor %s." % monitor_id)
-        client.delete_monitor(monitor_id)
+        ## LOG.info("Deleting Monitor %s." % monitor_id)
+        ## client.delete_monitor(monitor_id)
         LOG.info("Done")
 
 if __name__ == "__main__":

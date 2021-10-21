@@ -17,15 +17,15 @@ def flush_trace_cache(cache):
                     idigidata.send_to_idigi(cache_value, 
                                             "trace.log", append=False)
                 if not success:
-                    print "Failed to Send over Data Service, error %d, message: %s" % (error, errormsg)
+                    print("Failed to Send over Data Service, error %d, message: %s" % (error, errormsg))
 
-        except Exception, e:
-            print "trace writer failed with exception: ", e
+        except Exception as e:
+            print(f"trace writer failed with exception: {e}")
     finally:
         try:
             cache.truncate(0)
-        except Exception, e:
-            print "truncate failed with exception: " , e
+        except Exception as e:
+            print(f"truncate failed with exception: {e}")
 
 def syslog_server():
     trace_cache = StringIO.StringIO()
@@ -37,7 +37,7 @@ def syslog_server():
             # Bind to syslog port, 514
             trace_socket.bind(("", 514))
 
-            print "Entering Trace Read Now..."
+            print("Entering Trace Read Now...")
 
             while(True):
                 rlist, wlist, xlist = select.select([trace_socket], [], [], 5)
@@ -50,18 +50,18 @@ def syslog_server():
                 if(math.fabs(time.clock() - last_write)) > 60:
                     flush_trace_cache(trace_cache)
                     last_write = time.clock()
-        except Exception, e:
-            print "Exception during trace read: ", e
+        except Exception as e:
+            print(f"Exception during trace read: {e}")
     finally:
         trace_socket.close()
-        print "Trace thread ending"
+        print("Trace thread ending")
     
 if __name__ == "__main__":
     try:
         (status, result) = digicli.digicli("set trace state=on syslog=on mask=sms:*,idigi:*,edp:*,printf:-* loghost=127.0.0.1")
         if not status:
-            print "Initial CLI trace set failed"
+            print("Initial CLI trace set failed")
         else:
             syslog_server()
-    except Exception, e:
-        print "Initial CLI trace set failed with exception: %s" % e
+    except Exception as e:
+        print(f"Initial CLI trace set failed with exception: {e}")

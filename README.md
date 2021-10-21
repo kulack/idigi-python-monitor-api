@@ -75,13 +75,13 @@ finally:
 And that's it!  You can verify your code by disconnecting a device from iDigi:
 
 ```json
-Data Received {
+{
     "Document": {
         "Msg": {
             "DeviceCore": {
                 "devConnectwareId": "00000000-00000000-00409DFF-FF49B68F", 
                 "dpConnectionStatus": 0, 
-                ...
+                "etc": "..."
             }, 
             "group": "*", 
             "operation": "UPDATE", 
